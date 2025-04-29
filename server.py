@@ -1,13 +1,37 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
-import requests 
+import requests
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+import json
 
+# --- Flask app setup ---
 app = Flask(__name__)
-CORS(app)  # Allow React frontend to talk to Flask
+CORS(app)
 
+# --- File upload setup ---
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# --- Database setup ---
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sales_orders.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# --- Database model ---
+class SalesOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    upload_date = db.Column(db.DateTime, default=datetime.utcnow)
+    data = db.Column(db.Text, nullable=False)  # Store JSON as text
+
+# --- External API Endpoints ---
+PDF_EXTRACTION_API = 'https://plankton-app-qajlk.ondigitalocean.app/extraction_api'
+MATCHING_API_BATCH = 'https://endeavor-interview-api-gzwki.ondigitalocean.app/match/batch'
+
+# --- Routes ---
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -18,12 +42,10 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
     file.save(filepath)
 
     return jsonify({'message': 'File uploaded successfully!', 'filename': file.filename})
-
-PDF_EXTRACTION_API = 'https://plankton-app-qajlk.ondigitalocean.app/extraction_api'
 
 @app.route('/extract', methods=['POST'])
 def extract_data():
@@ -31,31 +53,22 @@ def extract_data():
     filename = data.get('filename')
 
     if not filename:
-        print('❌ No filename received')
         return jsonify({'error': 'Filename not provided'}), 400
 
-    file_path = os.path.join(UPLOAD_FOLDER, filename)
-    print(f'📄 Trying to open file at: {file_path}')
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
     if not os.path.exists(file_path):
-        print('❌ File not found on server')
         return jsonify({'error': 'File not found'}), 404
 
     try:
         with open(file_path, 'rb') as f:
             files = {'file': (filename, f, 'application/pdf')}
-            print(f'📤 Sending file to Extraction API: {PDF_EXTRACTION_API}')
             response = requests.post(PDF_EXTRACTION_API, files=files)
-            print(f'🔵 API Response Status: {response.status_code}')
-            print(f'🔵 API Response Text: {response.text}')
             response.raise_for_status()
             extracted_data = response.json()
             return jsonify(extracted_data)
     except Exception as e:
-        print(f'❗ Exception: {str(e)}')
         return jsonify({'error': str(e)}), 500
-    
-MATCHING_API_BATCH = 'https://endeavor-interview-api-gzwki.ondigitalocean.app/match/batch'
 
 @app.route('/match_items', methods=['POST'])
 def match_items():
@@ -72,6 +85,61 @@ def match_items():
         return jsonify(results)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+@app.route('/save_order', methods=['POST'])
+def save_order():
+    data = request.get_json()
+    filename = data.get('filename')
+    items = data.get('items')
+
+    if not filename or not items:
+        return jsonify({'error': 'Missing filename or items'}), 400
+
+    try:
+        # Save sales order to database
+        order = SalesOrder(
+            filename=filename,
+            data=json.dumps(items)  # Save as JSON string
+        )
+        db.session.add(order)
+        db.session.commit()
+        return jsonify({'message': 'Sales order saved successfully!'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+@app.route('/get_orders', methods=['GET'])
+def get_orders():
+    try:
+        orders = SalesOrder.query.order_by(SalesOrder.upload_date.desc()).all()
+        orders_list = [{
+            'id': order.id,
+            'filename': order.filename,
+            'upload_date': order.upload_date.isoformat()
+        } for order in orders]
+
+        return jsonify({'orders': orders_list})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+
+@app.route('/get_order/<int:order_id>', methods=['GET'])
+def get_order(order_id):
+    try:
+        order = SalesOrder.query.get(order_id)
+        if not order:
+            return jsonify({'error': 'Order not found'}), 404
+
+        order_data = {
+            'id': order.id,
+            'filename': order.filename,
+            'upload_date': order.upload_date.isoformat(),
+            'data': json.loads(order.data)
+        }
+        return jsonify(order_data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 
 
 if __name__ == '__main__':

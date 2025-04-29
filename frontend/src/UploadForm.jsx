@@ -65,7 +65,7 @@ function UploadForm() {
     }
   };
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     const headers = ['Request Item', 'Amount', 'Selected Match', 'Match Score'];
     const rows = extractedItems.map(item => {
       const requestItem = item['Request Item'];
@@ -73,15 +73,16 @@ function UploadForm() {
       const selected = selectedMatches[requestItem] || '';
       const score =
         matches[requestItem]?.find(m => m.match === selected)?.score?.toFixed(2) || '-';
-
-      return [requestItem, amount, selected, score];
+  
+      return { requestItem, amount, selected, score };
     });
-
+  
+    // Generate CSV content
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ...rows.map(row => `"${row.requestItem}","${row.amount}","${row.selected}","${row.score}"`)
     ].join('\n');
-
+  
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -90,8 +91,19 @@ function UploadForm() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  
+    // Step 2: Save order to database
+    try {
+      await axios.post('http://localhost:5000/save_order', {
+        filename: file.name,
+        items: rows,
+      });
+      console.log('✅ Sales order saved to database!');
+    } catch (error) {
+      console.error('❌ Failed to save order:', error);
+    }
   };
-
+  
   return (
     <div style={{ padding: '1rem', border: '1px solid #ccc', borderRadius: '10px', marginTop: '1rem' }}>
       <h2>Upload a Purchase Order PDF</h2>

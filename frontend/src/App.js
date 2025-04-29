@@ -1,10 +1,11 @@
 import React from 'react';
+import UploadForm from './UploadForm';
 
 function App() {
   return (
-    <div>
+    <div style={{ padding: '2rem' }}>
       <h1>SOlution App</h1>
-      <p>Welcome! Upload your purchase orders here.</p>
+      <UploadForm />
     </div>
   );
 }

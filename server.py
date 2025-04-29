@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+import requests 
 
 app = Flask(__name__)
 CORS(app)  # Allow React frontend to talk to Flask
@@ -21,6 +22,40 @@ def upload_file():
     file.save(filepath)
 
     return jsonify({'message': 'File uploaded successfully!', 'filename': file.filename})
+
+PDF_EXTRACTION_API = 'https://plankton-app-qajlk.ondigitalocean.app/extraction_api'
+
+PDF_EXTRACTION_API = 'https://plankton-app-qajlk.ondigitalocean.app/extraction_api'
+
+@app.route('/extract', methods=['POST'])
+def extract_data():
+    data = request.get_json()
+    filename = data.get('filename')
+
+    if not filename:
+        print('❌ No filename received')
+        return jsonify({'error': 'Filename not provided'}), 400
+
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    print(f'📄 Trying to open file at: {file_path}')
+
+    if not os.path.exists(file_path):
+        print('❌ File not found on server')
+        return jsonify({'error': 'File not found'}), 404
+
+    try:
+        with open(file_path, 'rb') as f:
+            files = {'file': (filename, f, 'application/pdf')}
+            print(f'📤 Sending file to Extraction API: {PDF_EXTRACTION_API}')
+            response = requests.post(PDF_EXTRACTION_API, files=files)
+            print(f'🔵 API Response Status: {response.status_code}')
+            print(f'🔵 API Response Text: {response.text}')
+            response.raise_for_status()
+            extracted_data = response.json()
+            return jsonify(extracted_data)
+    except Exception as e:
+        print(f'❗ Exception: {str(e)}')
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)

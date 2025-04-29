@@ -1,70 +1,112 @@
-# Getting Started with Create React App
+# Sales Order Matching Application
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This project is a web application that allows users to:
 
-## Available Scripts
+- Upload a Purchase Order PDF
+- Extract line items from the PDF
+- Match extracted items against a product catalog
+- Allow manual corrections (Human-in-the-loop experience)
+- Export matched sales orders as CSV
+- Save and version sales orders (edit old ones without overwriting)
+- View a dashboard of all processed sales orders
 
-In the project directory, you can run:
+---
 
-### `npm start`
+## 🛠 Technologies Used
+- React (Frontend)
+- Flask (Backend API)
+- SQLite (Database)
+- RapidFuzz (Fuzzy matching engine)
+- Axios (HTTP client)
+- Pandas (Catalog data handling)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+---
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## 🚀 How to Run Locally
 
-### `npm test`
+### 1. Backend (Flask)
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python server.py
+```
+- Runs on http://localhost:5000
+- Make sure `unique_fastener_catalog.csv` is present
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### 2. Frontend (React)
+```bash
+cd frontend
+npm install
+npm start
+```
+- Runs on http://localhost:3000
 
-### `npm run build`
+---
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## ✨ Features
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### Upload and Extract
+- Upload any PDF file.
+- Extracts line items automatically.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### Matching
+- Auto-matches extracted items against product catalog using fuzzy search.
+- Shows top 5 suggestions per line item.
 
-### `npm run eject`
+### Manual Corrections
+- If the top match is incorrect, user can search entire catalog manually.
+- Overrides are clearly shown separately.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+### Export
+- Download a CSV of the matched sales order.
+- Save the processed order to backend with version tracking.
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+### Dashboard
+- View all processed sales orders.
+- View or edit any past order.
+- Editing an order saves a new version (old version stays preserved).
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+### Versioning
+- Edited orders reference the original parent order.
+- Full history of changes maintained.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+---
 
-## Learn More
+## 🗂 Project Structure
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```
+/frontend
+  /src
+    /components
+      UploadForm.jsx
+      Dashboard.jsx
+    App.js
+    index.js
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+/backend
+  server.py
+  instance/sales_orders.db
+  uploads/
+  unique_fastener_catalog.csv
 
-### Code Splitting
+README.md
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+---
 
-### Analyzing the Bundle Size
+## 📝 Future Enhancements
+- Version history viewer (show all edits linked together)
+- Role-based access (admin vs viewer)
+- Deploy to AWS or Heroku
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+---
 
-### Making a Progressive Web App
+## 🙏 Credits
+Built with ❤️ for streamlined sales operations and human-in-the-loop matching workflows.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+---
 
-### Advanced Configuration
+Feel free to reach out if you have any questions or want to contribute!
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)

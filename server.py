@@ -25,8 +25,6 @@ def upload_file():
 
 PDF_EXTRACTION_API = 'https://plankton-app-qajlk.ondigitalocean.app/extraction_api'
 
-PDF_EXTRACTION_API = 'https://plankton-app-qajlk.ondigitalocean.app/extraction_api'
-
 @app.route('/extract', methods=['POST'])
 def extract_data():
     data = request.get_json()
@@ -56,6 +54,25 @@ def extract_data():
     except Exception as e:
         print(f'❗ Exception: {str(e)}')
         return jsonify({'error': str(e)}), 500
+    
+MATCHING_API_BATCH = 'https://endeavor-interview-api-gzwki.ondigitalocean.app/match/batch'
+
+@app.route('/match_items', methods=['POST'])
+def match_items():
+    data = request.get_json()
+    items = data.get('items', [])
+
+    if not items:
+        return jsonify({'error': 'No items provided'}), 400
+
+    try:
+        response = requests.post(MATCHING_API_BATCH, json={"queries": items})
+        response.raise_for_status()
+        results = response.json()
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)

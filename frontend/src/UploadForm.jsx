@@ -4,43 +4,93 @@ import axios from 'axios';
 function UploadForm() {
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [extractedItems, setExtractedItems] = useState([]);
+  const [matches, setMatches] = useState({});
+  const [selectedMatches, setSelectedMatches] = useState({});
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
+    setUploadStatus('');
+    setExtractedItems([]);
+    setMatches({});
+    setSelectedMatches({});
   };
 
   const handleUpload = async () => {
     if (!file) {
-      setUploadStatus('Please select a file first.');
+      setUploadStatus('❗ Please select a file first.');
       return;
     }
-  
+
     const formData = new FormData();
     formData.append('file', file);
-  
+
     try {
+      // Step 1: Upload to Flask
       const uploadResponse = await axios.post('http://localhost:5000/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-  
-      console.log('Upload success:', uploadResponse.data);
-  
-      // Now immediately call the extract endpoint
       const filename = uploadResponse.data.filename;
-  
+      console.log('✅ Upload success:', filename);
+
+      // Step 2: Extract line items
       const extractResponse = await axios.post('http://localhost:5000/extract', {
         filename: filename,
       });
-  
-      console.log('Extracted Data:', extractResponse.data);
-      setUploadStatus('✅ File uploaded and extracted successfully! Check console for data.');
+
+      console.log('✅ Extraction result:', extractResponse.data);
+      const items = extractResponse.data;
+      setExtractedItems(items);
+      setUploadStatus('✅ File uploaded and extracted successfully!');
+
+      // Step 3: Match extracted items
+      const itemNames = items.map(item => item['Request Item']);
+      const matchResponse = await axios.post('http://localhost:5000/match_items', {
+        items: itemNames,
+      });
+
+      console.log('🔍 Match results:', matchResponse.data);
+      const results = matchResponse.data.results;
+      setMatches(results);
+
+      // Step 4: Set default selected match for each item
+      const defaultSelections = {};
+      itemNames.forEach(name => {
+        defaultSelections[name] = results[name]?.[0]?.match || '';
+      });
+      setSelectedMatches(defaultSelections);
     } catch (error) {
-      console.error('Error:', error);
-      setUploadStatus('❌ Upload or extraction failed.');
+      console.error('❌ Upload or processing failed:', error);
+      setUploadStatus('❌ Something went wrong during upload or extraction.');
     }
-  };  
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Request Item', 'Amount', 'Selected Match', 'Match Score'];
+    const rows = extractedItems.map(item => {
+      const requestItem = item['Request Item'];
+      const amount = item['Amount'];
+      const selected = selectedMatches[requestItem] || '';
+      const score =
+        matches[requestItem]?.find(m => m.match === selected)?.score?.toFixed(2) || '-';
+
+      return [requestItem, amount, selected, score];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'matched_sales_order.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div style={{ padding: '1rem', border: '1px solid #ccc', borderRadius: '10px', marginTop: '1rem' }}>
@@ -49,6 +99,59 @@ function UploadForm() {
       <br /><br />
       <button onClick={handleUpload}>Upload</button>
       <p>{uploadStatus}</p>
+
+      {extractedItems.length > 0 && (
+        <div style={{ marginTop: '2rem' }}>
+          <h3>Extracted Line Items with Catalog Matches</h3>
+          <table border="1" cellPadding="10" style={{ borderCollapse: 'collapse', width: '100%' }}>
+            <thead>
+              <tr>
+                <th>Request Item</th>
+                <th>Amount</th>
+                <th>Top Catalog Match</th>
+                <th>Match Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {extractedItems.map((item, index) => {
+                const itemName = item['Request Item'];
+                const selected = selectedMatches[itemName] || '';
+                const score =
+                  matches[itemName]?.find(match => match.match === selected)?.score?.toFixed(2) || '-';
+
+                return (
+                  <tr key={index}>
+                    <td>{itemName}</td>
+                    <td>{item['Amount']}</td>
+                    <td>
+                      <select
+                        value={selected}
+                        onChange={(e) =>
+                          setSelectedMatches({
+                            ...selectedMatches,
+                            [itemName]: e.target.value
+                          })
+                        }
+                      >
+                        {(matches[itemName] || []).map((option, i) => (
+                          <option key={i} value={option.match}>
+                            {option.match} ({option.score.toFixed(1)})
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>{score}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div style={{ marginTop: '1rem' }}>
+            <button onClick={handleExportCSV}>Export to CSV</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

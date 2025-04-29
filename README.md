@@ -1,0 +1,2 @@
+# SOlution
+Endeavor MiniHack Project

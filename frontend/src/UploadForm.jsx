@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+// UploadForm.jsx (version before advanced features like PST timestamps, versioning, and custom filename)
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import Modal from 'react-modal';
 
 function UploadForm() {
   const [file, setFile] = useState(null);
@@ -7,8 +9,27 @@ function UploadForm() {
   const [extractedItems, setExtractedItems] = useState([]);
   const [matches, setMatches] = useState({});
   const [selectedMatches, setSelectedMatches] = useState({});
+  const [manualOverrides, setManualOverrides] = useState({});
   const [isMatching, setIsMatching] = useState(false);
 
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [currentEditingItem, setCurrentEditingItem] = useState('');
+  const [productNames, setProductNames] = useState([]);
+
+  useEffect(() => {
+    const fetchCatalog = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/get_catalog');
+        setProductNames(response.data.products);
+      } catch (error) {
+        console.error('❌ Failed to fetch catalog:', error);
+      }
+    };
+
+    fetchCatalog();
+  }, []);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -16,6 +37,7 @@ function UploadForm() {
     setExtractedItems([]);
     setMatches({});
     setSelectedMatches({});
+    setManualOverrides({});
   };
 
   const handleUpload = async () => {
@@ -28,14 +50,11 @@ function UploadForm() {
     formData.append('file', file);
 
     try {
-      // Step 1: Upload file to Flask
       const uploadResponse = await axios.post('http://localhost:5000/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const filename = uploadResponse.data.filename;
-      console.log('✅ Upload success:', filename);
 
-      // Step 2: Extract items from file
       const extractResponse = await axios.post('http://localhost:5000/extract', {
         filename: filename,
       });
@@ -43,11 +62,8 @@ function UploadForm() {
       const items = extractResponse.data;
       setExtractedItems(items);
       setUploadStatus('✅ File uploaded and extracted successfully!');
-      console.log('✅ Extraction result:', items);
 
-      // Step 3: Match items using local fuzzy match
       const itemNames = items.map(item => item['Request Item']);
-      
       setIsMatching(true);
       const matchResponse = await axios.post('http://localhost:5000/local_match', {
         items: itemNames,
@@ -56,14 +72,13 @@ function UploadForm() {
 
       const results = matchResponse.data.results;
       setMatches(results);
-      console.log('🔍 Local match results:', results);
 
-      // Step 4: Set default selected match for each item
       const defaultSelections = {};
       itemNames.forEach(name => {
         defaultSelections[name] = results[name]?.[0]?.match || '';
       });
       setSelectedMatches(defaultSelections);
+      setManualOverrides({});
     } catch (error) {
       console.error('❌ Upload or processing failed:', error);
       setUploadStatus('❌ Something went wrong during upload or extraction.');
@@ -77,12 +92,11 @@ function UploadForm() {
       const amount = item['Amount'];
       const selected = selectedMatches[requestItem] || '';
       const matched = matches[requestItem]?.find(m => m.match === selected);
-      const score = matched ? (matched.score * 100).toFixed(1) : '-';
-
+      const isManual = manualOverrides[requestItem];
+      const score = isManual ? 'Manual' : matched ? (matched.score * 100).toFixed(1) : '-';
       return { requestItem, amount, selected, score };
     });
 
-    // Generate and download CSV
     const csvContent = [
       headers.join(','),
       ...rows.map(row => `"${row.requestItem}","${row.amount}","${row.selected}","${row.score}"`)
@@ -96,28 +110,48 @@ function UploadForm() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
 
-    // Send to backend to save in DB
-    try {
-      await axios.post('http://localhost:5000/save_order', {
-        filename: file.name,
-        items: rows,
-      });
-      console.log('✅ Sales order saved to database!');
-    } catch (error) {
-      console.error('❌ Failed to save order:', error);
+  const handleOpenModal = (itemName) => {
+    setCurrentEditingItem(itemName);
+    setIsModalOpen(true);
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    if (!query) {
+      setSearchResults([]);
+      return;
     }
+    const results = productNames.filter(name =>
+      name.toLowerCase().includes(query.toLowerCase())
+    ).slice(0, 10);
+    setSearchResults(results);
+  };
+
+  const handleSelectResult = (selectedMatch) => {
+    setSelectedMatches(prev => ({ ...prev, [currentEditingItem]: selectedMatch }));
+    setManualOverrides(prev => ({ ...prev, [currentEditingItem]: true }));
+    setIsModalOpen(false);
+  };
+
+  const getScoreColor = (score, isManual) => {
+    if (score === '-' || isManual) return 'blue';
+    const numericScore = parseFloat(score);
+    if (numericScore >= 98) return 'green';
+    if (numericScore >= 90) return 'orange';
+    return 'red';
   };
 
   return (
-    <div style={{ padding: '1rem', border: '1px solid #ccc', borderRadius: '10px', marginTop: '1rem' }}>
+    <div style={{ padding: '1rem' }}>
       <h2>Upload a Purchase Order PDF</h2>
-      <input type="file" accept="application/pdf" onChange={handleFileChange} />
-      <br /><br />
+      <input type="file" accept="application/pdf" onChange={handleFileChange} /><br /><br />
       <button onClick={handleUpload}>Upload</button>
       <p>{uploadStatus}</p>
       {isMatching && <p>🔄 Matching extracted items with catalog... please wait.</p>}
-
 
       {extractedItems.length > 0 && (
         <div style={{ marginTop: '2rem' }}>
@@ -136,41 +170,71 @@ function UploadForm() {
                 const itemName = item['Request Item'];
                 const selected = selectedMatches[itemName] || '';
                 const matched = matches[itemName]?.find(m => m.match === selected);
-                const score = matched ? (matched.score * 100).toFixed(1) : '-';
+                const isManual = manualOverrides[itemName];
+                const score = isManual ? 'Manual' : matched ? (matched.score * 100).toFixed(1) : '-';
 
                 return (
                   <tr key={index}>
                     <td>{itemName}</td>
                     <td>{item['Amount']}</td>
                     <td>
-                      <select
-                        value={selected}
-                        onChange={(e) =>
-                          setSelectedMatches({
-                            ...selectedMatches,
-                            [itemName]: e.target.value
-                          })
-                        }
-                      >
+                      <select value={isManual ? '-' : selected} disabled={isManual}>
                         {(matches[itemName] || []).map((option, i) => (
                           <option key={i} value={option.match}>
                             {option.match} ({(option.score * 100).toFixed(1)}%)
                           </option>
                         ))}
                       </select>
+                      {isManual && (
+                        <div style={{ marginTop: '5px', fontStyle: 'italic', color: 'blue' }}>
+                          Selected: {selected}
+                        </div>
+                      )}
+                      <button
+                        style={{ marginTop: '5px', display: 'block' }}
+                        onClick={() => handleOpenModal(itemName)}
+                      >
+                        🔍 Search Catalog
+                      </button>
                     </td>
-                    <td>{score}</td>
+                    <td style={{ color: getScoreColor(score, isManual) }}>{score}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-
           <div style={{ marginTop: '1rem' }}>
             <button onClick={handleExportCSV}>Export to CSV</button>
           </div>
         </div>
       )}
+
+      <Modal
+        isOpen={isModalOpen}
+        onRequestClose={() => setIsModalOpen(false)}
+        style={{
+          content: {
+            top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '400px', padding: '20px'
+          }
+        }}
+      >
+        <h2>Search Catalog</h2>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => handleSearch(e.target.value)}
+          placeholder="Type to search..."
+          style={{ width: '100%', padding: '8px', marginBottom: '10px' }}
+        />
+        <div>
+          {searchResults.map((result, index) => (
+            <div key={index} style={{ padding: '5px 0', cursor: 'pointer' }} onClick={() => handleSelectResult(result)}>
+              {result}
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setIsModalOpen(false)}>Close</button>
+      </Modal>
     </div>
   );
 }

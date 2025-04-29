@@ -5,6 +5,8 @@ import requests
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import json
+import pandas as pd
+from difflib import get_close_matches, SequenceMatcher
 
 # --- Flask app setup ---
 app = Flask(__name__)
@@ -27,9 +29,18 @@ class SalesOrder(db.Model):
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
     data = db.Column(db.Text, nullable=False)  # Store JSON as text
 
-# --- External API Endpoints ---
+# --- External APIs ---
 PDF_EXTRACTION_API = 'https://plankton-app-qajlk.ondigitalocean.app/extraction_api'
 MATCHING_API_BATCH = 'https://endeavor-interview-api-gzwki.ondigitalocean.app/match/batch'
+
+# --- Load Local Product Catalog ---
+catalog_df = pd.read_csv('unique_fastener_catalog.csv')
+catalog_df.columns = catalog_df.columns.str.strip()  # <--- clean up column names
+product_names = catalog_df['Description'].tolist()
+
+
+def similarity(a, b):
+    return SequenceMatcher(None, a, b).ratio()
 
 # --- Routes ---
 
@@ -85,7 +96,27 @@ def match_items():
         return jsonify(results)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    
+
+@app.route('/local_match', methods=['POST'])
+def local_match():
+    data = request.get_json()
+    items = data.get('items', [])
+
+    if not items:
+        return jsonify({'error': 'No items provided'}), 400
+
+    results = {}
+
+    try:
+        for item in items:
+            matches = get_close_matches(item, product_names, n=5, cutoff=0.5)
+            result = [{'match': m, 'score': similarity(item, m)} for m in matches]
+            results[item] = sorted(result, key=lambda x: x['score'], reverse=True)
+
+        return jsonify({'results': results})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/save_order', methods=['POST'])
 def save_order():
     data = request.get_json()
@@ -96,17 +127,16 @@ def save_order():
         return jsonify({'error': 'Missing filename or items'}), 400
 
     try:
-        # Save sales order to database
         order = SalesOrder(
             filename=filename,
-            data=json.dumps(items)  # Save as JSON string
+            data=json.dumps(items)
         )
         db.session.add(order)
         db.session.commit()
         return jsonify({'message': 'Sales order saved successfully!'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    
+
 @app.route('/get_orders', methods=['GET'])
 def get_orders():
     try:
@@ -120,7 +150,6 @@ def get_orders():
         return jsonify({'orders': orders_list})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    
 
 @app.route('/get_order/<int:order_id>', methods=['GET'])
 def get_order(order_id):
@@ -138,9 +167,6 @@ def get_order(order_id):
         return jsonify(order_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-
-
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)

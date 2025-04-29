@@ -7,6 +7,8 @@ function UploadForm() {
   const [extractedItems, setExtractedItems] = useState([]);
   const [matches, setMatches] = useState({});
   const [selectedMatches, setSelectedMatches] = useState({});
+  const [isMatching, setIsMatching] = useState(false);
+
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -26,32 +28,35 @@ function UploadForm() {
     formData.append('file', file);
 
     try {
-      // Step 1: Upload to Flask
+      // Step 1: Upload file to Flask
       const uploadResponse = await axios.post('http://localhost:5000/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const filename = uploadResponse.data.filename;
       console.log('✅ Upload success:', filename);
 
-      // Step 2: Extract line items
+      // Step 2: Extract items from file
       const extractResponse = await axios.post('http://localhost:5000/extract', {
         filename: filename,
       });
 
-      console.log('✅ Extraction result:', extractResponse.data);
       const items = extractResponse.data;
       setExtractedItems(items);
       setUploadStatus('✅ File uploaded and extracted successfully!');
+      console.log('✅ Extraction result:', items);
 
-      // Step 3: Match extracted items
+      // Step 3: Match items using local fuzzy match
       const itemNames = items.map(item => item['Request Item']);
-      const matchResponse = await axios.post('http://localhost:5000/match_items', {
+      
+      setIsMatching(true);
+      const matchResponse = await axios.post('http://localhost:5000/local_match', {
         items: itemNames,
       });
+      setIsMatching(false);
 
-      console.log('🔍 Match results:', matchResponse.data);
       const results = matchResponse.data.results;
       setMatches(results);
+      console.log('🔍 Local match results:', results);
 
       // Step 4: Set default selected match for each item
       const defaultSelections = {};
@@ -71,18 +76,18 @@ function UploadForm() {
       const requestItem = item['Request Item'];
       const amount = item['Amount'];
       const selected = selectedMatches[requestItem] || '';
-      const score =
-        matches[requestItem]?.find(m => m.match === selected)?.score?.toFixed(2) || '-';
-  
+      const matched = matches[requestItem]?.find(m => m.match === selected);
+      const score = matched ? (matched.score * 100).toFixed(1) : '-';
+
       return { requestItem, amount, selected, score };
     });
-  
-    // Generate CSV content
+
+    // Generate and download CSV
     const csvContent = [
       headers.join(','),
       ...rows.map(row => `"${row.requestItem}","${row.amount}","${row.selected}","${row.score}"`)
     ].join('\n');
-  
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -91,8 +96,8 @@ function UploadForm() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  
-    // Step 2: Save order to database
+
+    // Send to backend to save in DB
     try {
       await axios.post('http://localhost:5000/save_order', {
         filename: file.name,
@@ -103,7 +108,7 @@ function UploadForm() {
       console.error('❌ Failed to save order:', error);
     }
   };
-  
+
   return (
     <div style={{ padding: '1rem', border: '1px solid #ccc', borderRadius: '10px', marginTop: '1rem' }}>
       <h2>Upload a Purchase Order PDF</h2>
@@ -111,6 +116,8 @@ function UploadForm() {
       <br /><br />
       <button onClick={handleUpload}>Upload</button>
       <p>{uploadStatus}</p>
+      {isMatching && <p>🔄 Matching extracted items with catalog... please wait.</p>}
+
 
       {extractedItems.length > 0 && (
         <div style={{ marginTop: '2rem' }}>
@@ -128,8 +135,8 @@ function UploadForm() {
               {extractedItems.map((item, index) => {
                 const itemName = item['Request Item'];
                 const selected = selectedMatches[itemName] || '';
-                const score =
-                  matches[itemName]?.find(match => match.match === selected)?.score?.toFixed(2) || '-';
+                const matched = matches[itemName]?.find(m => m.match === selected);
+                const score = matched ? (matched.score * 100).toFixed(1) : '-';
 
                 return (
                   <tr key={index}>
@@ -147,7 +154,7 @@ function UploadForm() {
                       >
                         {(matches[itemName] || []).map((option, i) => (
                           <option key={i} value={option.match}>
-                            {option.match} ({option.score.toFixed(1)})
+                            {option.match} ({(option.score * 100).toFixed(1)}%)
                           </option>
                         ))}
                       </select>
